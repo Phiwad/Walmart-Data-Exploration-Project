@@ -1,0 +1,116 @@
+---
+title: "Walmart Sales & Temperature: Data Exploration Project"
+author: "Aphiwad Niron Chhourn"
+format: docx
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+**RESEARCH QUESTION:**
+
+In these stores, do higher temperatures **causally affect** sales?
+
+```{r}
+library(tidyverse)
+library(vtable)
+library(fixest)
+```
+
+I use tidyverse for data cleaning and visualization, vtable for descriptive statistics, and fixest for estimating fixed-effects regressions consistent with class methodology.
+
+```{r}
+walmart <- read_csv("Walmart_Sales.csv")
+```
+
+I load the raw Walmart sales dataset using a relative file path to ensure reproducibility.
+
+```{r}
+vtable(walmart)
+```
+
+Table 1 presents descriptive statistics for the main variables in the dataset. Weekly sales vary substantially across stores and weeks, and temperature ranges across a wide interval, suggesting meaningful variation for analysis.
+
+```{r}
+walmart <- walmart %>%
+  mutate(
+    Date = as.Date(Date, format = "%d-%m-%Y"),
+    ln_sales = log(Weekly_Sales),
+    week = Date
+  ) %>%
+  arrange(Store, Date) #I sort by store and date to ensure the data are ordered correctly for panel structure.
+```
+
+I convert Date into a Date object and log-transform Weekly_Sales to interpret coefficients in percentage terms.
+
+Temperature may affect weekly sales by changing consumer behavior. However, seasonality affects both temperature and sales, creating a confounding pathway. Additionally, permanent store characteristics affect sales levels. To address these confounders, I include store fixed effects to control for time invariant differences across stores, and week fixed effects to control for seasonality and common shocks over time.
+
+```{r}
+ggplot(walmart, aes(x = Temperature, y = ln_sales)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+The relationship appears approximately linear, motivating a linear temperature specification.
+
+I estimate fixed-effects regressions to isolate within-store variation in temperature over time.
+
+```{r}
+# Model 1: Naive OLS
+m1 <- feols(ln_sales ~ Temperature, data = walmart)
+etable(m1)
+```
+
+Model 1 estimates the raw correlation between temperature and log weekly sales without controlling for store characteristics or seasonality. This model is not intended to provide a causal estimate but serves as a baseline comparison.
+
+```{r}
+# Model 2: Fixed Effects
+m2 <- feols(
+  ln_sales ~ Temperature | Store + week,
+  data = walmart
+)
+etable(m2)
+```
+
+Model 2 includes store fixed effects and week fixed effects. Store fixed effects control for time-invariant differences across stores (such as size and location), while week fixed effects control for seasonality and any shocks common to all stores.
+
+```{r}
+# Model 3: Fixed Effects with Controls
+m3 <- feols(
+  ln_sales ~ Temperature + Holiday_Flag + Fuel_Price + CPI + Unemployment |
+  Store + week,
+  data = walmart
+)
+etable(m3)
+```
+
+Model 3 adds holiday and economic controls. The temperature effect remains similar and statistically significant, suggesting the result is robust to additional controls.
+
+```{r}
+#Model 4: Quadratic FE
+m4 <- feols(
+  ln_sales ~ Temperature + I(Temperature^2) | Store + week,
+  data = walmart
+)
+etable(m4)
+```
+
+Model 4 allows for a nonlinear relationship by including a squared temperature term. Sales increase with temperature, but the effect becomes smaller at higher temperature levels.
+
+```{r}
+#Comparasion table
+etable(m1, m2, m3, m4)
+```
+
+## Interpretation and Discussion
+
+Temperature changes matter for a large retailer like Walmart because they influence customer demand and overall sales. If warmer weeks increase sales, Walmart can better plan inventory and marketing strategies. As average temperatures continue to rise over time, understanding this relationship becomes increasingly important. While simple observation may show warmer weather and higher sales moving together, formal analysis is needed to determine whether temperature truly causes changes in sales.
+
+Comparing hot weeks to cold weeks without controlling for seasonality would produce biased results. Hot weeks often occur during summer, when sales naturally increase due to school breaks and vacations. Without controlling for these seasonal patterns, higher sales could be incorrectly attributed to temperature. In addition, Walmart stores differ in size, location, and customer base. Store fixed effects help control for these permanent differences, ensuring that the model isolates within store changes over time.
+
+Model 2 provides the main estimate because it controls for both store fixed effects and week fixed effects. This means each store is compared to itself in warmer versus cooler weeks. According to Model 2, a 1°F increase in temperature is associated with approximately a 0.19% increase in weekly sales within the same store. A 10°F increase implies roughly a 1.9% rise in sales, which is economically meaningful for a large retailer, as even small percentage changes translate into substantial revenue differences.
+
+Model 3 adds holiday and economic controls, and the temperature effect remains stable and statistically significant. This strengthens the credibility of the findings. The nonlinear specification shows that sales rise with temperature, but the effect weakens at very high temperatures. This suggests that moderate warmth increases sales, while extreme heat reduces the marginal impact of additional temperature increases.
+
+The impact of temperature on sales appears to be positive and statistically significant based on the fixed effects models. In Model 2, after controlling for store differences and seasonality, a 1°F increase in temperature is associated with about a 0.19% increase in weekly sales within the same store. This result remains stable even after adding additional controls, which strengthens the credibility of the finding. Overall, the analysis suggests that higher temperatures causally increase weekly sales, and while the effect is relatively small, it is economically meaningful for a large retailer like Walmart.
